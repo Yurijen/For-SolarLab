@@ -1,0 +1,359 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Data;
+using System.Data.SqlClient;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+
+namespace SolarLab
+{
+    class Program
+    {
+        // Необходимо для равтоматического разворачивания окна на весь экран
+        [DllImport("user32.dll")]
+        public static extern bool ShowWindow(System.IntPtr hWnd, int cmdShow);
+
+
+        // ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
+        static SqlConnection sqlConnection;
+
+        static SqlDataReader sqlDataReader;
+
+
+        static void Main(string[] args)
+        {
+            // Необходимо для равтоматического разворачивания окна на весь экран
+            Process p = Process.GetCurrentProcess();
+            ShowWindow(p.MainWindowHandle, 3);
+
+            Console.WriteLine($"[SYSTEM]: {DateTime.Now}");
+
+            open_connection_database(); // Процедура открытия соединения с БД
+
+            print_menu(); // Печать меню
+
+            while (true) use_menu(); // Использование меню (цикл операций)
+        }
+
+        // Отрисовка меню
+        static void print_menu()
+        {
+            string[] menu_item = new string[9];
+            menu_item[0] = "1. Заметки на сегодня";
+            menu_item[1] = "2. Заметки на завтра";
+            menu_item[2] = "3. Показать все заметки";
+            menu_item[3] = "4. Найти заметку по дате";
+            menu_item[4] = "5. Добавить новую заметку";
+            menu_item[5] = "6. Редактировать заметку по ID";
+            menu_item[6] = "7. Удалить заметку по ID";
+            menu_item[7] = "8. Закрыть соединение с БД и выйти";
+            menu_item[8] = "9. Очистить консоль";
+
+            Console.Write("\u2554"); // Левый верхний угол
+            for (int i = 1; i <= 38; i++) // Чертим таблицу
+                Console.Write("\u2550"); // Горизонтальные линии
+            Console.WriteLine("\u2557"); // Првавый верхний угол
+
+            for (int i = 0; i <= 8; i++)
+            {
+                Console.Write($"\u2551 {menu_item[i]}");
+                for (int j = menu_item[i].Length + 1; j <= 37; j++)
+                {
+                    Console.Write(" ");
+                }
+                Console.WriteLine("\u2551");
+            }
+
+            Console.Write("\u255a"); // Левый нижний угол
+            for (int i = 1; i <= 38; i++) // Чертим таблицу
+                Console.Write("\u2550"); // Горизонтальные линии
+            Console.WriteLine("\u255d"); // Првавый нижний угол
+
+        }
+
+        static void use_menu()
+        {
+            Console.Write("[SYSTEM KEY]: ");
+            sbyte ch = Convert.ToSByte(Console.ReadLine());
+            switch (ch)
+                {
+                    case 1: { notes_now();  }; break; // Заметки на сегодня
+                    case 2: { notes_tomorrow(); }; break; // Заметки на завтра
+                    case 3: { get_all_notes(); } break; // Показать все заметки
+                    case 4: { search_notes_from_date(); } break; // Найти заметку по дате
+                    case 5: { insert_note(); } break; // Добавить новую заметку
+                    case 6: { update_note(); } break; // Редактировать заметку по ID
+                    case 7: { delete_note(); } break; // Удалить заметку по ID
+                    case 8: { close_connection_database(); Environment.Exit(0); } break; // Закрыть соединение с БД и выйти
+                    case 9: { Console.Clear(); print_menu(); } break; // Очистить консоль
+
+            }
+
+            // System.FormatException 
+
+        }
+
+        // Список заметок на сегодня
+        static void notes_now()
+        {
+            bool rezult = false;
+            SqlCommand sqlCommand = new SqlCommand($"SELECT * FROM [Plan] WHERE [reminder_date]='{DateTime.Now.ToString("yyyy-MM-dd").Replace(".", "-")}'", sqlConnection);
+            sqlDataReader = sqlCommand.ExecuteReader();
+
+                while (sqlDataReader.Read())
+                {
+                    print_notes(sqlDataReader); // Процедура печати заметки
+                    rezult = true;
+                }
+            sqlDataReader.Close();
+            Console.WriteLine();
+
+
+            if (rezult == false) Console.WriteLine("[SYSTEM]: На сегодня нет заметок!");
+        }
+
+        // Список заметок на завтра
+        static void notes_tomorrow()
+        {
+            bool rezult = false;
+            SqlCommand sqlCommand = new SqlCommand($"SELECT * FROM [Plan] WHERE [reminder_date]='{DateTime.Now.AddDays(1).ToString("yyyy-MM-dd").Replace(".", "-")}'", sqlConnection);
+            sqlDataReader = sqlCommand.ExecuteReader();
+
+            while (sqlDataReader.Read())
+            {
+                print_notes(sqlDataReader); // Процедура печати заметки
+                rezult = true;
+            }
+            sqlDataReader.Close();
+            if(rezult==false) Console.WriteLine("[SYSTEM]: На завтра нет заметок!");
+        }
+
+        // Найти заметку по дате
+        static void search_notes_from_date()
+        {
+            Console.Write("[SYSTEM]: Введите дату для поиска. Поддерживаемые форматы: 'YYYY-MM-DD' или 'YYYY.MM.DD' 'YYYY/MM/DD'! \n[DATE]: " );
+            string SearchDate = Console.ReadLine().Replace(".", "-").Replace("/", "-");
+
+            bool rezult = false;
+            SqlCommand sqlCommand = new SqlCommand($"SELECT * FROM [Plan] WHERE [reminder_date]='{SearchDate}'", sqlConnection);
+            sqlDataReader = sqlCommand.ExecuteReader();
+
+            while (sqlDataReader.Read())
+            {
+                print_notes(sqlDataReader); // Процедура печати заметки
+                rezult = true;
+            }
+            sqlDataReader.Close();
+            if (rezult == false) Console.WriteLine($"[SYSTEM]: На {SearchDate} нет заметок!");
+
+        }
+
+        // Создать новоую заметку
+        static void insert_note()
+        {
+            try
+            {
+                Console.Write("[Заголовок заметки]: "); string header = Console.ReadLine();
+                Console.Write("[Аннотация заметки]: "); string annotation = Console.ReadLine();
+                Console.Write("[Дата напоминания (Поддерживаемые форматы: 'YYYY-MM-DD' или 'YYYY.MM.DD' 'YYYY/MM/DD')]: "); string reminder_date = Console.ReadLine().Replace(".", "-").Replace("/", "-");
+                string creation_date = DateTime.Now.ToString("yyyy-MM-dd").Replace(".", "-");
+
+                SqlCommand sqlCommand = new SqlCommand($"INSERT INTO [Plan] (header, annotation, creation_date, reminder_date) VALUES(@header, @annotation, @creation_date, @reminder_date)", sqlConnection);
+
+                sqlCommand.Parameters.AddWithValue("header", header);
+
+                sqlCommand.Parameters.AddWithValue("annotation", annotation);
+                
+                sqlCommand.Parameters.AddWithValue("creation_date", creation_date);
+
+                sqlCommand.Parameters.AddWithValue("reminder_date", reminder_date);
+
+                sqlCommand.ExecuteNonQuery(); // Выполнение запроса
+
+                Console.WriteLine($"[SYSTEM]: Новая заметка успешно добавлена! Дата напоминания {reminder_date}");
+            }
+           
+           catch(SqlException)
+            {
+                Console.WriteLine("[SYSTEM]: Неверный формат даты. Операция добавления - отменена!");
+            }
+           catch (Exception ex) { Console.WriteLine($"Необработанное исключение: {ex}"); }
+        }
+
+        // Получить информацию о заметке по ID
+        static bool get_note_from_id(string ID)
+        {
+            try
+            {
+                SqlCommand sqlCommand = new SqlCommand($"SELECT * FROM [Plan] WHERE [id]={ID}", sqlConnection);
+                sqlDataReader = sqlCommand.ExecuteReader();
+                if (sqlDataReader.Read())
+                {
+                    print_notes(sqlDataReader); // Процедура печати заметки
+                    sqlDataReader.Close();
+                    return true;
+                }
+                else { Console.WriteLine($"[SYSTEM]: Заметки #{ID} не существует!"); sqlDataReader.Close(); return false; }
+            }
+            catch (SqlException) { Console.WriteLine("[SYSTEM]: Вы ввели некорректный ID. Операция редактирования - отменена!"); return false; }
+            catch (Exception ex) { Console.WriteLine($"Необработанное исключение: {ex}"); return false; }
+
+
+
+        }
+
+        // Обновление заметок по ID
+        static void update_note()
+        {
+            try
+            {
+                Console.Write("[Введите ID заметки для редактирования]: "); string ID = Console.ReadLine();
+                if(get_note_from_id(ID)) // Процедура получения и печати данных о заметке по ID
+                {
+                    Console.WriteLine($"[SYSTEM]: Прежние данные о заметке #{ID}");
+                    Console.Write("[Новый заголовок заметки]: "); string header = Console.ReadLine();
+                    Console.Write("[Новая аннотация заметки]: "); string annotation = Console.ReadLine();
+                    Console.Write("[Новая дата напоминания (Поддерживаемые форматы: 'YYYY-MM-DD' или 'YYYY.MM.DD' 'YYYY/MM/DD')]: "); string reminder_date = Console.ReadLine().Replace(".", "-").Replace("/", "-");
+                    string creation_date = DateTime.Now.ToString("yyyy-MM-dd").Replace(".", "-");
+
+                    SqlCommand sqlCommand = new SqlCommand($"UPDATE [Plan] SET [header]=@header, [annotation]=@annotation, [creation_date]=@creation_date, [reminder_date]=@reminder_date WHERE [id]={ID}", sqlConnection);
+
+                    sqlCommand.Parameters.AddWithValue("header", header);
+
+                    sqlCommand.Parameters.AddWithValue("annotation", annotation);
+
+                    sqlCommand.Parameters.AddWithValue("creation_date", creation_date);
+
+                    sqlCommand.Parameters.AddWithValue("reminder_date", reminder_date);
+
+                    sqlCommand.ExecuteNonQuery(); // Выполнение запроса
+
+                    Console.WriteLine($"[SYSTEM]: Информация о заметке #{ID} обновлена! \n[SYSTEM]: Новые данные о заметке:");
+                    get_note_from_id(ID); // Процедура получения и печати данных о заметке по ID
+                }
+            }
+            catch (SqlException)
+            {
+                Console.WriteLine("[SYSTEM]: Неверный формат. Операция редактирования - отменена!");
+            }
+            catch (Exception ex) { Console.WriteLine($"Необработанное исключение: {ex}"); }
+
+        }
+
+        // Удаление заметок по ID
+        static void delete_note()
+        {
+            try
+            {
+                Console.Write("[Введите ID заметки для её удаления]: "); int ID = Convert.ToInt32(Console.ReadLine());
+                SqlCommand sqlCommand = new SqlCommand($"DELETE FROM [Plan] WHERE [id]={ID}", sqlConnection);
+                    Console.WriteLine($"SYSTEM]: Вы действительно хотите удалить заметку #{ID}? [Y] - ДА [N] - НЕТ");
+                    Console.Write("[Подтверждение на удаление]: "); char ch = Convert.ToChar(Console.ReadLine());
+                    if ((ch == 'Y') || (ch == 'y'))
+                    {
+                        sqlCommand.ExecuteNonQuery(); // Выполнение запроса
+
+                        Console.WriteLine($"[SYSTEM]: Заметка #{ID} удалена!");
+                    }
+                    else if ((ch == 'N') || (ch == 'n')) Console.WriteLine("[SYSTEM]: Операция удаления была отменена!");
+                    else { Console.WriteLine("[SYSTEM]: Некорректное проведение операции. Операция удаления - отменена!"); }
+                //}
+                //else { Console.WriteLine($"[SYSTEM]: Заметки #{ID} не существует! Операция удаления - отменена!"); }
+            }
+            catch { Console.WriteLine("[SYSTEM]: Вы ввели некорректный ID. Операция удаления - отменена!"); }
+        }
+
+
+        // Открыть соединение с базой данных
+        static void open_connection_database()
+        {
+
+                Console.WriteLine("[SYSTEM]: Подключение к Базе Данных...");
+
+                string StringConnection = $@"Data Source=(LocalDB)\MSSQLLocalDB;AttachDbFilename={Environment.CurrentDirectory}\Database1.mdf;Integrated Security=True";
+
+                Console.WriteLine($"[SYSTEM]: {StringConnection}");
+
+                sqlConnection = new SqlConnection(StringConnection);
+
+                sqlConnection.Open();
+
+                Console.WriteLine("[SYSTEM]: Соединение с Базой Данных успешно установлено!");
+        }
+
+        // Закрыть соединение с базой данных
+        static void close_connection_database()
+        {
+            sqlConnection.Close();
+        }
+
+        // Печать заметок
+        static void print_notes(SqlDataReader sqlDataReader)
+        {
+            string ID = $"ID: {sqlDataReader["ID"].ToString()}";
+            string creation_date = $"Создано: {sqlDataReader["creation_date"].ToString().Remove(10)}";
+            string reminder_date = $"Напомнить: {sqlDataReader["reminder_date"].ToString().Remove(10)}";
+
+            Console.Write("\u2554"); // Левый верхний угол таблицы
+            for (int i = 1; i <= 230; i++) // Чертим таблицу
+            {
+                Console.Write("\u2550"); // Горизонтальные линии
+                if (i == ID.Length) Console.Write("\u2566"); // Треугольник
+                if (i == creation_date.Length + ID.Length) Console.Write("\u2566"); // Треугольник
+                if (i == reminder_date.Length + creation_date.Length + ID.Length) Console.Write("\u2566"); // Треугольник
+            }
+            Console.WriteLine("\u2557"); // Правый верхний угол
+
+            // ВЫВОД ШАПКИ
+            Console.Write($"\u2551{ID}\u2551{creation_date}\u2551{reminder_date}\u2551{sqlDataReader["header"]}");
+
+            for (int i = reminder_date.Length + creation_date.Length + ID.Length + sqlDataReader["header"].ToString().Length; i <= 229; i++) // Чертим таблицу
+            {
+                Console.Write(" "); // Пробел
+            }
+            Console.WriteLine("\u2551"); // Вертиальныа линия
+            Console.Write("\u2560"); // Левый нижний угол (треугольник)
+
+            for (int i = 1; i <= 230; i++) // Чертим таблицу
+            {
+                Console.Write("\u2550"); // Горизонтальные линии
+                if (i == ID.Length) Console.Write("\u2569"); // Треугольник
+                if (i == creation_date.Length + ID.Length) Console.Write("\u2569"); // Треугольник
+                if (i == reminder_date.Length + creation_date.Length + ID.Length) Console.Write("\u2569"); // Треугольник
+            }
+            Console.WriteLine("\u2563"); // Правый нижний угол (треугольник)
+
+            // ВЫВОД АННОТАЦИИ
+            Console.Write($"\u2551{sqlDataReader["annotation"]}");
+            for (int i = sqlDataReader["annotation"].ToString().Length + 1; i <= 233; i++) // Чертим таблицу
+            {
+                Console.Write(" "); // Пробел
+            }
+            Console.WriteLine("\u2551"); // Вертиальныа линия
+
+            Console.Write("\u255a"); // Нижний левый угол
+            for (int i = 1; i <= 233; i++) // Чертим таблицу
+            {
+                Console.Write("\u2550"); // Горизонтальные линии
+            }
+            Console.WriteLine("\u255d"); // Нижний правый угол
+
+            Console.WriteLine();
+        }
+
+        // Получить информацию о всех заметках
+        static void get_all_notes()
+        {
+                SqlCommand sqlCommand = new SqlCommand("SELECT * FROM [Plan]", sqlConnection);
+                sqlDataReader = sqlCommand.ExecuteReader();
+                while (sqlDataReader.Read())
+                {
+                    print_notes(sqlDataReader); // Процедура печати заметки
+                }
+            sqlDataReader.Close();
+        }
+    }
+}
